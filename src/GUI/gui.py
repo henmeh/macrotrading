@@ -4,6 +4,7 @@ from datetime import datetime
 import sys
 sys.path.append('/media/henning/Volume/Programming/macrotrading/src')
 from NewsFeed.newsfeed import NewsFeed
+import webbrowser
 
 class GUI():
     def __init__(self, news_feed):
@@ -48,6 +49,7 @@ class GUI():
             padx=10,
             pady=10
         )
+        self._setup_text_tags()
         self.news_display.grid(row=0, column=0, sticky="nsew")
         
         # Status Bar
@@ -79,16 +81,52 @@ class GUI():
             title = article['title']
             description = article['description'].ljust(max_title_width)[:max_title_width]
             link = article['url']
+            
+            # Insert each part with appropriate formatting
             self.news_display.insert(
                 tk.END,
-                f"{self.format_date(article['published_at'])} | {article['source']}\n{title}\n{description}\n{link}\n\n",
+                f"{self.format_date(article['published_at'])} | {article['source']}\n",
                 'article'
             )
+            self.news_display.insert(tk.END, f"{title}\n", 'article')
+            self.news_display.insert(tk.END, f"{description}\n", 'article')
+            self.news_display.insert(tk.END, f"{link}\n", 'url')  # URL gets special tag
+            self.news_display.insert(tk.END, "\n", 'article')
         
         self.news_display.configure(state='disabled')
         self.status_var.set(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
+    def _setup_text_tags(self):
+        """Configure text styles and link behavior"""
+        # Regular text style
+        self.news_display.tag_config('article', foreground="orange")
+        
+        # Hyperlink style (for URLs)
+        self.news_display.tag_config('url', 
+            foreground="cyan",
+            underline=True,
+            font=("Consolas", 12, "underline"))
+        
+        # Click binding for URLs
+        self.news_display.tag_bind('url', '<Button-1>', self._open_url)
+        self.news_display.tag_bind('url', '<Enter>', 
+            lambda e: self.root.config(cursor="hand2"))
+        self.news_display.tag_bind('url', '<Leave>', 
+            lambda e: self.root.config(cursor=""))
+        
+
+    def _open_url(self, event):
+        """Handle URL clicks"""
+        widget = event.widget
+        index = widget.index(f"@{event.x},{event.y}")
+        line = widget.get(f"{index} linestart", f"{index} lineend")
+        
+        # Find URL in the clicked line
+        if line.startswith(('http://', 'https://')):
+            webbrowser.open(line.strip())
+
+    
     def calculate_max_width(self, articles):
         """Calculate optimal title width based on current window size"""
         avg_char_width = 8  # Approximate width of a character in pixels
