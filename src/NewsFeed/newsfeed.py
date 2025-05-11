@@ -17,6 +17,10 @@ class NewsFeed():
         load_dotenv()
         self.db_name = db_name
         self._initialize_database()
+        self.get_macro_news_api()
+        self.get_macro_news()
+        self.get_marketaux_news()
+        self.get_alphavantage_news()
     
 
     def _initialize_database(self):
@@ -66,57 +70,141 @@ class NewsFeed():
             conn.commit()
 
 
-    def get_macro_news_api(self, number_of_headlines=20):
+    def get_macro_news_api(self):
         news = []
         url = f"https://newsapi.org/v2/everything?q=Federal+Reserve+OR+inflation+OR+CPI+OR+unemployment&apiKey={os.getenv('NEWSAPI_KEY')}"
-        response = requests.get(url).json()
+        
+        try:
+            response = requests.get(url).json()
 
-        for article in response['articles']:
-            news_article = {
-                    "title": article["title"],
-                    "description": article["description"],
-                    "content": article["content"],
-                    "url": article["url"],
-                    "published_at": self._parse_date(article["publishedAt"])
-                }
-            news.append(news_article)
+            for article in response['articles']:
+                news_article = {
+                        "title": article["title"],
+                        "description": article["description"],
+                        "content": article["content"],
+                        "url": article["url"],
+                        "published_at": self._parse_date(article["publishedAt"])
+                    }
+                news.append(news_article)
 
-        self._store_articles(news, "newsapi") 
+            self._store_articles(news, "newsapi") 
+        except KeyError:
+            pass
 
-        #return news[:number_of_headlines]
-    
-
-    def get_macro_news(self, number_of_headlines=10):
-        news = []
+    def get_macro_news(self):
         sources = {
             "Financial Times": "https://www.ft.com/?format=rss",
             "ForexLive": "https://www.forexlive.com/feed/"
         }
-        for _, url in sources.items():
-            feed = feedparser.parse(url)
-            for article in feed.entries[:number_of_headlines]:
-                news_article = {
-                    "title": article["title"],
-                    "description": article["summary"],
-                    "content": "",
-                    "url": article["link"],
-                    "published_at": self._parse_date(article["published"])
-                }
-                news.append(news_article)
-
-        #return news
+        try:
+            for name, url in sources.items():
+                news = []
+                feed = feedparser.parse(url)
+                for article in feed.entries:
+                    news_article = {
+                        "title": article["title"],
+                        "description": article["summary"],
+                        "content": "",
+                        "url": article["link"],
+                        "published_at": self._parse_date(article["published"])
+                    }
+                    news.append(news_article)
+                self._store_articles(news, name)
+        except Exception:
+            pass
 
     
+    def get_marketaux_news(self):
+        news = []
+        url = f"https://api.marketaux.com/v1/news/all?countries=global&filter_entities=true&language=en&api_token={os.getenv('MARKETAUX_KEY')}"
+
+        try:
+            response = requests.get(url).json()
+
+            for article in response['data']:
+                news_article = {
+                        "title": article["title"],
+                        "description": article["description"],
+                        "content": "",
+                        "url": article["url"],
+                        "published_at": self._parse_date(article["published_at"])
+                    }
+                news.append(news_article)
+
+            self._store_articles(news, "marketaux")
+        except KeyError:
+            pass
+
+    def get_alphavantage_news(self):
+        news = []
+        url = f"https://www.alphavantage.co/query?function=NEWS_SENTIMENT&apikey={os.getenv('ALPHA_VANTAGE_KEY')}"
+        
+        try:
+            response = requests.get(url).json()
+
+            for article in response['feed']:
+                news_article = {
+                        "title": article["title"],
+                        "description": article["summary"],
+                        "content": "",
+                        "url": article["url"],
+                        "published_at": self._parse_date(article["time_published"])
+                    }
+                news.append(news_article)
+
+            self._store_articles(news, "alphavantage")
+        except KeyError:
+            pass
+
+
     def get_latest_news(self, limit: int = 10) -> list[dict]:
-        """Fetch the most recent news articles from the database"""
+        self.get_macro_news_api()
+        self.get_macro_news()
+        self.get_marketaux_news()
+        self.get_alphavantage_news()
+
         with sqlite3.connect(self.db_name) as conn:
-            conn.row_factory = sqlite3.Row  # Return rows as dictionaries
+            conn.row_factory = sqlite3.Row
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM articles 
                 ORDER BY published_at DESC 
                 LIMIT ?
             """, (limit,))
+            return [dict(row) for row in cursor.fetchall()]
+    
+
+    def search_articles(self, search_term: str, limit: int = 20, source: str = None, after_date: str = None) -> list[dict]:
+        """
+        Search articles across title, description, and content
+        Returns articles containing the search term (case-insensitive)
+        """
+        with sqlite3.connect(self.db_name) as conn:
+            conn.row_factory = sqlite3.Row
+            cursor = conn.cursor()
+            
+            query = """
+                SELECT * FROM articles 
+                WHERE 
+                    (title LIKE ? OR 
+                    description LIKE ? OR 
+                    content LIKE ?)
+            """
+            params = [f"%{search_term}%"] * 3
+            
+            # Add optional filters
+            if source:
+                query += " AND source = ?"
+                params.append(source)
+                
+            if after_date:
+                query += " AND published_at >= ?"
+                params.append(after_date)
+                
+            query += " ORDER BY published_at DESC LIMIT ?"
+            params.append(limit)
+            
+            cursor.execute(query, params)
             return [dict(row) for row in cursor.fetchall()]
     
 
@@ -145,12 +233,13 @@ class NewsFeed():
 
 
 #test = NewsFeed()
-#x = test.get_macro_news_api()
+#test.get_alphavantage_news()
 #print(x[0])
 #x = test.get_macro_news_api()
 #print(x[0])
 
 
+"""
 from rich.console import Console
 from rich.panel import Panel
 import time 
@@ -174,3 +263,4 @@ def display_news():
 while True:
     display_news()
     time.sleep(90)
+"""
