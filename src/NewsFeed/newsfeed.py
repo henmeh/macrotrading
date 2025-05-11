@@ -21,6 +21,7 @@ class NewsFeed():
         self.get_macro_news()
         self.get_marketaux_news()
         self.get_alphavantage_news()
+        self.get_fred_news()
     
 
     def _initialize_database(self):
@@ -155,13 +156,37 @@ class NewsFeed():
             self._store_articles(news, "alphavantage")
         except KeyError:
             pass
+    
+
+    def get_fred_news(self):
+        news = []
+        url = f"https://api.stlouisfed.org/fred/releases?api_key={os.getenv('FRED_KEY')}&file_type=json"
+        
+
+        try:
+            response = requests.get(url).json()
+            
+            for article in response['releases']:
+                news_article = {
+                                "title": article.get("name", ""),         
+                                "description": article.get("notes", ""),  
+                                "content": "",
+                                "url": article.get("link", ""),            
+                                "published_at": self._parse_date(article.get("realtime_start", ""))
+                                #"published_at": self._parse_date(datetime.now())
+                                }   
+                news.append(news_article)
+            self._store_articles(news, "FRED")
+        except Exception as e:
+            pass
 
 
-    def get_latest_news(self, limit: int = 10) -> list[dict]:
+    def get_latest_news(self, limit: int = 100) -> list[dict]:
         self.get_macro_news_api()
         self.get_macro_news()
         self.get_marketaux_news()
         self.get_alphavantage_news()
+        self.get_fred_news()
 
         with sqlite3.connect(self.db_name) as conn:
             conn.row_factory = sqlite3.Row
@@ -232,8 +257,8 @@ class NewsFeed():
             return datetime.now().isoformat() + "Z"
 
 
-#test = NewsFeed()
-#test.get_alphavantage_news()
+test = NewsFeed()
+#test.get_fred_news()
 #print(x[0])
 #x = test.get_macro_news_api()
 #print(x[0])

@@ -49,7 +49,8 @@ class GUI():
             padx=10,
             pady=10
         )
-        self._setup_text_tags()
+        self._setup_text_tags(self.news_display)
+        self._setup_text_tags(self.results_display)
         self.news_display.grid(row=0, column=0, sticky="nsew")
         
         # Status Bar
@@ -65,11 +66,11 @@ class GUI():
         
         # Auto-Refresh Setup
         self.refresh_news()
-        self.auto_refresh_id = self.root.after(300000, self.auto_refresh)  # 5 minutes
+        self.auto_refresh_id = self.root.after(600000, self.auto_refresh)  # 10 minutes
     
 
     def refresh_news(self):
-        """Fetch and display latest news with responsive formatting"""
+        """Fetch and display latest news with clickable URLs"""
         self.news_display.configure(state='normal')
         self.news_display.delete(1.0, tk.END)
 
@@ -97,34 +98,42 @@ class GUI():
         self.status_var.set(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 
-    def _setup_text_tags(self):
-        """Configure text styles and link behavior"""
-        # Regular text style
-        self.news_display.tag_config('article', foreground="orange")
+    def _setup_text_tags(self, text_widget):
+        """Configure text styles and link behavior for a text widget"""
+        if not text_widget:
+            return
+            
+        # Regular text styles
+        text_widget.tag_config('article', foreground="orange")
+        text_widget.tag_config('result', foreground="orange")
         
-        # Hyperlink style (for URLs)
-        self.news_display.tag_config('url', 
+        # Hyperlink style
+        text_widget.tag_config('url', 
             foreground="cyan",
             underline=True,
             font=("Consolas", 12, "underline"))
         
-        # Click binding for URLs
-        self.news_display.tag_bind('url', '<Button-1>', self._open_url)
-        self.news_display.tag_bind('url', '<Enter>', 
-            lambda e: self.root.config(cursor="hand2"))
-        self.news_display.tag_bind('url', '<Leave>', 
-            lambda e: self.root.config(cursor=""))
+        # Click binding
+        text_widget.tag_bind('url', '<Button-1>', self._open_url)
+        text_widget.tag_bind('url', '<Enter>', 
+            lambda e: text_widget.config(cursor="hand2"))
+        text_widget.tag_bind('url', '<Leave>', 
+            lambda e: text_widget.config(cursor=""))
         
 
     def _open_url(self, event):
-        """Handle URL clicks"""
+        """Handle URL clicks in any text widget"""
         widget = event.widget
         index = widget.index(f"@{event.x},{event.y}")
-        line = widget.get(f"{index} linestart", f"{index} lineend")
         
-        # Find URL in the clicked line
-        if line.startswith(('http://', 'https://')):
-            webbrowser.open(line.strip())
+        # Get all tags at the clicked position
+        tags = widget.tag_names(index)
+        
+        # Check if any tag starts with 'url:'
+        url_tag = next((t for t in tags if t.startswith('url:')), None)
+        if url_tag:
+            webbrowser.open(url_tag[4:])  # Remove 'url:' prefix
+
 
     
     def calculate_max_width(self, articles):
@@ -267,7 +276,7 @@ class GUI():
 
 
     def execute_advanced_search(self):
-        """Handle search with all filters"""
+        """Handle search with clickable URLs in results"""
         query = self.search_entry.get().strip()
         if not query:
             self.search_status.set("Error: Please enter a search term")
@@ -297,7 +306,7 @@ class GUI():
                 after_date=after_date
             )
             
-            # Display results
+            # Display results with clickable URLs
             self.results_display.config(state=tk.NORMAL)
             self.results_display.delete(1.0, tk.END)
             
@@ -305,14 +314,22 @@ class GUI():
                 self.results_display.insert(tk.END, "No matching articles found", "error")
             else:
                 for article in results:
+                    # Insert article content
                     self.results_display.insert(
                         tk.END,
                         f"[{article['source']}] {article['published_at'][:10]}\n"
                         f"{article['title']}\n"
                         f"{'-'*50}\n"
-                        f"{article['description'][:200]}...\n\n",
+                        f"{article['description'][:200]}...\n",
                         "result"
                     )
+                    
+                    # Insert clickable URL with special tag
+                    if article.get('url'):
+                        url = article['url']
+                        self.results_display.insert(tk.END, f"{url}\n", ('result', f'url:{url}'))
+                    
+                    self.results_display.insert(tk.END, "\n", "result")
             
             self.search_status.set(f"Found {len(results)} results")
             
